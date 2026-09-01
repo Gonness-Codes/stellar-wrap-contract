@@ -77,7 +77,7 @@ pub const MAX_VERIFY_PAYLOAD_BYTES: usize = 32_768; // 32 KiB
 /// ~45.5 KB bytecode overhead (measured with rustc 1.77.0, soroban-sdk 21.0.0 /
 /// soroban-env-host 21.0.0: wasm with in-guest verification is 78.4 KB, with
 /// host primitive is 32.9 KB).
-/// A CI size check tracks this overhead to keep it within budget. See
+/// A CI size check tracks this overhead against the `.github/wasm-size-limit` budget (200,000 bytes) to keep the in-guest path from undermining the issue #525 sub-50 KB binary target. See
 /// `SIGNATURE_VERIFICATION_DECISION.md` for full measurement and architectural
 /// trade-off details.
 ///
