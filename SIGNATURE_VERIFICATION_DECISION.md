@@ -74,17 +74,21 @@ The previous comment in `Cargo.toml` stated:
 2. **`no_std` Target Requirement (`wasm32v1-none`)**:
    - For `wasm32v1-none` (the standard Soroban target in Rust 1.84+), `default-features = false` MUST be explicitly declared:
      ```toml
-     ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["rand_core"] }
+     ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["rand_core"] }
      ```
    - Omitting `default-features = false` causes Cargo to resolve default features (`std`), failing compilation on `no_std` bare-metal targets.
+
+**Conclusion**: Because `soroban-env-host v27.0.1` depends on `ed25519-dalek v2.2.0`, the previous pin to `=3.0.0` is no longer grounded in dependency unification. Since the in-guest path is retained behind the `in-guest-ed25519` feature flag, the pin will be updated to `=2.2.0` to match the host and avoid unnecessary version divergence.
 
 ---
 
 ## Decision & Path Forward
 
-1. **Dual Implementation Awareness**:
-   - The in-guest verification path is preserved for fine-grained error semantics (`ContractError::InvalidSignature`), but its size impact is now rigorously measured and documented.
-   - The host primitive `e.crypto().ed25519_verify` remains the verified, drop-in alternative for deployments where the strict 200 KB budget must be met without external post-processing (`wasm-opt`).
+**Decision**: Based on the measurements above, the in-guest `ed25519-dalek` dependency adds 45,507 bytes (19.12% of binary size) and pushes the contract over the 200 KB budget (238,040 B > 204,800 B). We therefore **switch the default verification path to the host primitive** `e.crypto().ed25519_verify`. The host error on invalid signatures (`Error(Crypto, InvalidInput)`) will be accepted and documented as the canonical failure signal; client SDKs should map it to an `InvalidSignature`-equivalent error. Pre-validation of signature shape is not required because the host primitive already checks all inputs deterministically.
+
+1. **Default Implementation**:
+   - The host primitive `e.crypto().ed25519_verify` is now the default verification method, ensuring the binary fits within the 200 KB budget with 12,267 bytes of headroom.
+   - The in-guest `ed25519-dalek` path is retained behind the `in-guest-ed25519` feature flag for contracts that require structured guest errors and have a relaxed size budget.
 2. **Manifest Fixes**:
    - Updated `Cargo.toml` to enforce `default-features = false` on `ed25519-dalek`, ensuring reliable `wasm32v1-none` builds across all modern toolchains.
    - Documented the exact `soroban-env-host` dependency relation in `Cargo.toml`.
