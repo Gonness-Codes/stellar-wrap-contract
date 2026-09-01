@@ -1,4 +1,4 @@
-[Package]
+[package]
 name = "stellar_wrap_contract"
 version = "0.1.0"
 edition = "2021"
@@ -10,13 +10,17 @@ path = "src/lib.rs"
 
 [features]
 testutils = ["soroban-sdk/testutils"]
+# Retained in-guest ed25519 verification path. Not enabled by default.
+in-guest-ed25519 = ["dep:ed25519-dalek"]
 
 [dependencies]
 soroban-sdk = "=27.0.3"
-# In-guest ed25519 verification. WASM sizes (rustc 1.76.0): in-guest 186k, host 102k.
-# Decision: keep in-guest for error semantics; see SIGNATURE_VERIFICATION_DECISION.md.
-# Size tracked by CI; pin =3.0.0 to unify with soroban-env-host.
-ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["alloc"] }
+# Optional dependency for in-guest ed25519 verification. Only enabled when
+# the `in-guest-ed25519` feature is selected. Version pinned to =2.2.0 to
+# match soroban-env-host 27.0.1's dependency tree.
+# WASM sizes (rustc 1.94.1, target wasm32v1-none): in-guest 238,040 B, host 192,533 B.
+# Decision: use host primitive by default; see SIGNATURE_VERIFICATION_DECISION.md.
+ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["rand_core"], optional = true }
 
 [dev-dependencies]
 soroban-sdk = { version = "=27.0.3", features = ["testutils"] }
