@@ -1,7 +1,13 @@
 extern crate alloc;
+use alloc::vec;
 
+// `ed25519-dalek` is pinned to exactly 3.0.0 to remain compatible with the
+// `curve25519-dalek` version used by `soroban-env-host` (re-verified against
+// soroban-sdk 21.0.0).
+use ed25519_dalek::{Signature, VerifyingKey};
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol};
 
+use alloc::vec;
 use crate::ContractError;
 
 /// Domain separator used for mint signatures.
@@ -60,25 +66,25 @@ pub fn construct_mint_payload(
 /// [`ContractError::InvalidSignature`] rather than panicking.
 pub const MAX_VERIFY_PAYLOAD_BYTES: usize = 32_768; // 32 KiB
 
-/// Verifies an Ed25519 signature using the host primitive, mapping every
-/// failure mode to [`ContractError::InvalidSignature`].
-///
-/// The host `ed25519_verify` primitive returns a boolean result for valid
-/// inputs, but may trap with `Error(Crypto, InvalidInput)` on malformed keys
-/// or signatures. Clients must map that host error to
+/// Verifies an Ed25519 signature in-guest, mapping every failure mode to
 /// [`ContractError::InvalidSignature`].
 ///
-/// Using the host primitive avoids pulling `ed25519-dalek`/`curve25519-dalek`
-/// into the compiled Wasm. See `SIGNATURE_VERIFICATION_DECISION.md` for
-/// measured sizes and toolchain details.
+/// The host `ed25519_verify` primitive cannot produce the contract error: on a
+/// bad signature it traps the VM with an uncatchable `Error(Crypto,
+/// InvalidInput)` host error (soroban-sdk `Crypto::ed25519_verify` discards the
+/// result, so the guest never regains control). Verifying here reproduces
+/// acceptance semantics inside the contract's error domain at the cost of
+/// ~45.5 KB bytecode overhead (measured with rustc 1.77.0, soroban-sdk 21.0.0:
+/// wasm with in-guest verification is 78.4 KB, with host primitive is 32.9 KB).
+/// A CI size check tracks this overhead to keep it within budget. See
+/// `SIGNATURE_VERIFICATION_DECISION.md` for full measurement and architectural
+/// trade-off details.
 ///
 /// # Panics
 ///
-/// Payloads larger than [`MAX_VERIFY_PAYLOAD_BYTES`] are rejected with
-/// [`ContractError::InvalidSignature`]. The host may trap on malformed inputs;
-/// clients should treat that as [`ContractError::InvalidSignature`].
+/// Never panics. Payloads larger than [`MAX_VERIFY_PAYLOAD_BYTES`] are
+/// rejected with [`ContractError::InvalidSignature`].
 fn verify_ed25519(
-    e: &Env,
     public_key: &BytesN<32>,
     message: &Bytes,
     signature: &BytesN<64>,
@@ -88,13 +94,16 @@ fn verify_ed25519(
         return Err(ContractError::InvalidSignature);
     }
 
-    if e.crypto()
-        .ed25519_verify(public_key.clone(), message.clone(), signature.clone())
-    {
-        Ok(())
-    } else {
-        Err(ContractError::InvalidSignature)
-    }
+    let verifying_key = VerifyingKey::from_bytes(&public_key.to_array())
+        .map_err(|_| ContractError::InvalidSignature)?;
+    let sig = Signature::from_bytes(&signature.to_array());
+
+    let mut msg = [0u8; MAX_VERIFY_PAYLOAD_BYTES];
+    message.copy_into_slice(&mut msg[..len]);
+
+    verifying_key
+        .verify_strict(&msg[..len], &sig)
+        .map_err(|_| ContractError::InvalidSignature)
 }
 
 /// Verify an admin signature for a wrap mint request.
@@ -103,9 +112,8 @@ fn verify_ed25519(
 /// signature is bound to the current contract instance, the target user,
 /// the period, the archetype, and the data hash.
 ///
-/// Signature verification failures are returned as
-/// [`ContractError::InvalidSignature`]. The host may trap on malformed inputs;
-/// clients should map that error to [`ContractError::InvalidSignature`].
+/// Every rejection — malformed key, tampered payload, wrong key, corrupted
+/// signature — surfaces as [`ContractError::InvalidSignature`].
 #[allow(clippy::too_many_arguments)]
 pub fn verify_mint_signature(
     e: &Env,
@@ -127,7 +135,7 @@ pub fn verify_mint_signature(
         data_hash,
         payload_version,
     );
-    verify_ed25519(e, admin_pubkey, &payload, signature)
+    verify_ed25519(admin_pubkey, &payload, signature)
 }
 
 /// Domain separator used for batch aggregated signatures.
@@ -156,9 +164,7 @@ pub fn construct_batch_mint_payload(
 
 /// Verify an aggregated batch signature over a set of batch wrap items.
 ///
-/// Signature verification failures are returned as
-/// [`ContractError::InvalidSignature`]. The host may trap on malformed inputs;
-/// clients should map that error to [`ContractError::InvalidSignature`].
+/// Any rejection surfaces as [`ContractError::InvalidSignature`].
 pub fn verify_batch_aggregated_signature(
     e: &Env,
     admin_pubkey: &BytesN<32>,
@@ -168,7 +174,7 @@ pub fn verify_batch_aggregated_signature(
     aggregated_signature: &BytesN<64>,
 ) -> Result<(), ContractError> {
     let payload = construct_batch_mint_payload(e, contract_id, items, payload_version);
-    verify_ed25519(e, admin_pubkey, &payload, aggregated_signature)
+    verify_ed25519(admin_pubkey, &payload, aggregated_signature)
 }
 
 pub const INBOUND_BRIDGE_DOMAIN_SEPARATOR: &[u8; 18] = b"stellar-bridge-in1";
@@ -236,7 +242,7 @@ pub fn verify_inbound_bridge_signature(
         archetype,
         data_hash,
     );
-    verify_ed25519(e, relayer_pubkey, &payload, signature)
+    verify_ed25519(relayer_pubkey, &payload, signature)
 }
 
 #[cfg(test)]
@@ -247,8 +253,6 @@ mod tests {
 
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
-    // Test-only: production verification uses the host `ed25519_verify`
-    // primitive, so `ed25519-dalek` is not linked into the guest Wasm.
     use ed25519_dalek::{Signer, SigningKey};
     use soroban_sdk::{symbol_short, testutils::Address as _, Address, Bytes, BytesN, Env, Symbol};
 
@@ -600,7 +604,7 @@ mod tests {
         // Build a Bytes payload larger than MAX_VERIFY_PAYLOAD_BYTES.
         let oversized = Bytes::from_slice(&env, &vec![0u8; MAX_VERIFY_PAYLOAD_BYTES + 1]);
 
-        let result = verify_ed25519(&env, &pubkey, &oversized, &dummy_sig);
+        let result = verify_ed25519(&pubkey, &oversized, &dummy_sig);
         assert_eq!(result, Err(ContractError::InvalidSignature));
     }
 }
