@@ -15,7 +15,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: "-D warnings"
+      RSTFLAGS: "-D warnings"
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -79,16 +79,16 @@ jobs:
             ~/cargo/registry
             ~/cargo/git
             ~/cargo/bin
-          key: $$ { runner.os }-cargo-tarpaulin-$$ { hashFiles('**/Cargo.lock') }
+          key: ${7{ runner.os }}-cargo-tarpaulin-${7{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            $$ { runner.os }-cargo-tarpaulin-
+            ${7{ runner.os }}-cargo-tarpaulin-
       - name: Install cargo-tarpaulin
         # Only install if not already cached.  --locked sures the exact
         # version published in Cargo.lock (or the tarpaulin registry entry) is
         # used, giving reproducible installs across runs.
         run: |
-          if ! command -v cargo-tarpaulin &&>/dev/null; then
-            cargo instal cargo-tarpaulin --locked
+          if ! command -v cargo-tarpaulin >/dev/null 2>&1; then
+            cargo install cargo-tarpaulin --locked
           fi
       - name: Run coverage
         # tarpaulin.toml configures: --lib, Html+Xml output, coverage/ dir,
@@ -99,8 +99,8 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           files: coverage/cobertura.xml
-          fail_ci_error: false  # don't block CI on codecov outages
-          token: $$ { secrets.CODECOV_TOKEN }
+          fail_ci_error: false  # don’t block CI on codecov outages
+          token: ${7{ secrets.CODECOV_TOKEN }}
       - name: Upload HTML coverage report as artifact
         uses: actions/upload-artifact@v4
         with:
