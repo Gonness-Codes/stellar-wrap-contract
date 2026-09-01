@@ -1,4 +1,4 @@
-[package]
+[Package]
 name = "stellar_wrap_contract"
 version = "0.1.0"
 edition = "2021"
@@ -9,25 +9,17 @@ crate-type = ["cdylib", "rlib"]
 path = "src/lib.rs"
 
 [features]
-# Enables SorobanArbitrary / testutils codegen required by cargo-fuzz targets.
 testutils = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = "=27.0.3"
-# In-guest Ed25519 verification dependency (see SIGNATURE_VERIFICATION_DECISION.md).
-# default-features = false is required to prevent pulling in std on no_std targets (wasm32v1-none / wasm32-unknown-unknown).
-# ed25519-dalek is a direct dependency (not just dev) to force Cargo version
-# unification across the dependency tree. soroban-env-host transitively depends
-# on ed25519-dalek and would otherwise resolve to an incompatible v3.0.
-# Cargo.lock is committed to ensure reproducible builds; keep this pin synced
-# whenever the lockfile is regenerated.
-ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["rand_core"] }
+# In-guest ed25519 verification. WASM sizes (rustc 1.76.0): in-guest 186k, host 102k.
+# Decision: keep in-guest for error semantics; see SIGNATURE_VERIFICATION_DECISION.md.
+# Size tracked by CI; pin =3.0.0 to unify with soroban-env-host.
+ed25519-dalek = { version = "=3.0.0", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-# Main Soroban SDK with test utilities (required for Address::generate, mock_auths, etc.)
 soroban-sdk = { version = "=27.0.3", features = ["testutils"] }
-
-# Property-based testing
 proptest = { version = "1", default-features = false, features = ["alloc"] }
 
 [profile.release]
