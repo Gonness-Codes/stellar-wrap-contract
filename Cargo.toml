@@ -10,17 +10,9 @@ path = "src/lib.rs"
 
 [features]
 testutils = ["soroban-sdk/testutils"]
-# Retained in-guest ed25519 verification path. Not enabled by default.
-in-guest-ed25519 = ["dep:ed25519-dalek"]
 
 [dependencies]
 soroban-sdk = "=27.0.3"
-# Optional dependency for in-guest ed25519 verification. Only enabled when
-# the `in-guest-ed25519` feature is selected. Version pinned to =2.2.0 to
-# match soroban-env-host 27.0.1's dependency tree.
-# WASM sizes (rustc 1.94.1, target wasm32v1-none): in-guest 238,040 B, host 192,533 B.
-# Decision: use host primitive by default; see SIGNATURE_VERIFICATION_DECISION.md.
-ed25519-dalek = { version = "=2.2.0", default-features = false, features = ["rand_core"], optional = true }
 
 [dev-dependencies]
 soroban-sdk = { version = "=27.0.3", features = ["testutils"] }
