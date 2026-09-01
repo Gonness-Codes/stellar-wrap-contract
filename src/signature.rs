@@ -3,7 +3,7 @@ use alloc::vec;
 
 // `ed25519-dalek` is pinned to exactly 3.0.0 to remain compatible with the
 // `curve25519-dalek` version used by `soroban-env-host` (re-verified against
-// soroban-sdk 21.0.0).
+// soroban-env-host 21.0.0, as bundled with soroban-sdk 21.0.0).
 use ed25519_dalek::{Signature, VerifyingKey};
 use soroban_sdk::{contracttype, xdr::ToXdr, Address, Bytes, BytesN, Env, Symbol};
 
@@ -74,8 +74,9 @@ pub const MAX_VERIFY_PAYLOAD_BYTES: usize = 32_768; // 32 KiB
 /// InvalidInput)` host error (soroban-sdk `Crypto::ed25519_verify` discards the
 /// result, so the guest never regains control). Verifying here reproduces
 /// acceptance semantics inside the contract's error domain at the cost of
-/// ~45.5 KB bytecode overhead (measured with rustc 1.77.0, soroban-sdk 21.0.0:
-/// wasm with in-guest verification is 78.4 KB, with host primitive is 32.9 KB).
+/// ~45.5 KB bytecode overhead (measured with rustc 1.77.0, soroban-sdk 21.0.0 /
+/// soroban-env-host 21.0.0: wasm with in-guest verification is 78.4 KB, with
+/// host primitive is 32.9 KB).
 /// A CI size check tracks this overhead to keep it within budget. See
 /// `SIGNATURE_VERIFICATION_DECISION.md` for full measurement and architectural
 /// trade-off details.
