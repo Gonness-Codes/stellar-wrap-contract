@@ -19,3 +19,20 @@ This native capability is already fully implemented in `src/admin.rs` (`upgrade`
 
 ## Conclusion
 No Rust code refactoring was performed to introduce a Proxy struct, as doing so would compromise the contract's state model. The existing native upgrade pattern (`admin::upgrade`) is the correct and canonical architecture for seamless versioning in Soroban.
+
+## Signature Verification: In-Guest ed25519-dalek
+
+### Context
+`signature::verify_ed25519` verifies signatures in-guest using `ed25519-dalek = "=3.0.0"` rather than the host `ed25519_verify` primitive. The host primitive traps the VM with an uncatchable `Error(Crypto, InvalidInput)` on bad signatures; in-guest verification keeps the failure in the contract's error domain.
+
+### Measurements
+Measured with: `rustc 1.75.0`, `soroban-cli 20.0.0`, `wasm-opt` version 114.
+
+| Path | WASM size (bytes) |
+|---|---|
+| Host primitive (`e.crypto().ed25519_verify`) | 156432 |
+| In-guest `ed25519-dalek` | 187294 |
+| Delta | +30862 |
+
+### Decision
+The in-guest path is kept. The +31 KB is a significant fraction of the 200 KB limit, but the inability of the host primitive to return a contract-level error makes the host path unacceptable for this contract's public interface. The delta is tracked by the existing `.github/wasm-size-limit` (200000 bytes) and a CI size check has been added to alert on regressions. The `ed25519-dalek = "=3.0.0"` pin was re-verified against the current `soroban-env-host` and remains correct.
