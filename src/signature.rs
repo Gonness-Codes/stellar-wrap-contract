@@ -63,16 +63,20 @@ pub const MAX_VERIFY_PAYLOAD_BYTES: usize = 32_768; // 32 KiB
 /// Verifies an Ed25519 signature using the host primitive, mapping every
 /// failure mode to [`ContractError::InvalidSignature`].
 ///
-/// The host `ed25519_verify` primitive returns a boolean result, so verification
-/// failures stay inside the contract's error domain without pulling
-/// `ed25519-dalek`/`curve25519-dalek` into the compiled Wasm.
-/// See `SIGNATURE_VERIFICATION_DECISION.md` for measured sizes and toolchain
-/// details.
+/// The host `ed25519_verify` primitive returns a boolean result for valid
+/// inputs, but may trap with `Error(Crypto, InvalidInput)` on malformed keys
+/// or signatures. Clients must map that host error to
+/// [`ContractError::InvalidSignature`].
+///
+/// Using the host primitive avoids pulling `ed25519-dalek`/`curve25519-dalek`
+/// into the compiled Wasm. See `SIGNATURE_VERIFICATION_DECISION.md` for
+/// measured sizes and toolchain details.
 ///
 /// # Panics
 ///
-/// Never panics. Payloads larger than [`MAX_VERIFY_PAYLOAD_BYTES`] are
-/// rejected with [`ContractError::InvalidSignature`].
+/// Payloads larger than [`MAX_VERIFY_PAYLOAD_BYTES`] are rejected with
+/// [`ContractError::InvalidSignature`]. The host may trap on malformed inputs;
+/// clients should treat that as [`ContractError::InvalidSignature`].
 fn verify_ed25519(
     e: &Env,
     public_key: &BytesN<32>,
@@ -99,8 +103,9 @@ fn verify_ed25519(
 /// signature is bound to the current contract instance, the target user,
 /// the period, the archetype, and the data hash.
 ///
-/// Every rejection — malformed key, tampered payload, wrong key, corrupted
-/// signature — surfaces as [`ContractError::InvalidSignature`].
+/// Signature verification failures are returned as
+/// [`ContractError::InvalidSignature`]. The host may trap on malformed inputs;
+/// clients should map that error to [`ContractError::InvalidSignature`].
 #[allow(clippy::too_many_arguments)]
 pub fn verify_mint_signature(
     e: &Env,
@@ -151,7 +156,9 @@ pub fn construct_batch_mint_payload(
 
 /// Verify an aggregated batch signature over a set of batch wrap items.
 ///
-/// Any rejection surfaces as [`ContractError::InvalidSignature`].
+/// Signature verification failures are returned as
+/// [`ContractError::InvalidSignature`]. The host may trap on malformed inputs;
+/// clients should map that error to [`ContractError::InvalidSignature`].
 pub fn verify_batch_aggregated_signature(
     e: &Env,
     admin_pubkey: &BytesN<32>,
@@ -240,6 +247,8 @@ mod tests {
 
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
+    // Test-only: production verification uses the host `ed25519_verify`
+    // primitive, so `ed25519-dalek` is not linked into the guest Wasm.
     use ed25519_dalek::{Signer, SigningKey};
     use soroban_sdk::{symbol_short, testutils::Address as _, Address, Bytes, BytesN, Env, Symbol};
 
