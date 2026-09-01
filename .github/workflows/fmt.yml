@@ -1,6 +1,5 @@
 name: Cargo Fmt
-
-en:
+on:
   push:
     branches: [ main ]
   pull_request:
@@ -18,3 +17,35 @@ jobs:
           components: rustfmt
       - name: Run cargo fmt check
         run: cargo fmt --check
+
+  wasm-size:
+    name: WASM Size Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Build release WASM
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: Check WASM size
+        env:
+          WASM_LIMITO_FILE: .github/wasm-size-limit
+        run: |
+          set -euo pipefail
+          limit=$(cat "$WASM_LIMIT_FILE")
+          wasm_file=$(find target/wasm32-unknown-unknown/release -maxdepth 1 -name '*.wasm' -printf '%s %p\n' | sort -n | tail -1 | awk '{print $2}')
+          if [ -z "$wasm_file" ]; then
+            echo "No .wasm file found in target/wasm32-unknown-unknown/release"
+            exit 1
+          fi
+          size=$(wc -c < "$wasm_file")
+          echo "Toolchain: $(rustc --version)"
+          echo "WASM file: $wasm_file"
+          echo "WASM size: $size bytes"
+          echo "Size limit: $limit bytes"
+          if [ "$size" -gt "$limit" ]; then
+            echo "Error: WASM binary size ($size) exceeds limit ($limit)."
+            exit 1
+          fi
